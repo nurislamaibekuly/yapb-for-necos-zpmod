@@ -3283,6 +3283,7 @@ void Bot::update () {
       }
    }
 
+   zpTactics ();
    runMovement ();
 }
 
@@ -4491,6 +4492,10 @@ float Bot::getShiftSpeed () {
 void Bot::refreshCreatureStatus (char *infobuffer) {
    // if bot is on infected team, assume he is a creature
    if (game.is (GameFlags::ZombieMod)) {
+      // the mod changes roles mid-round, keep the bot's team in sync
+      if (game.is (GameFlags::HalfLife)) {
+         m_team = game.getPlayerTeam (ent ());
+      }
       static StringRef zmInfectedTeam (conf.fetchCustom ("ZMInfectedTeam"));
 
       // by default infected team is terrorists

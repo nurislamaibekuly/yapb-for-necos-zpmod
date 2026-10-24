@@ -529,6 +529,8 @@ private:
    void findValidNode ();
    void setPathOrigin ();
    void fireWeapons ();
+   void zpTactics ();
+   bool zpUseTool (const char *weapon, const Vector &target, float holdTime);
    void doFireWeapons ();
    void handleWeapons (float distance, int index, int id, int choosen);
    void handleHLWeapons (float distance, int id, int choosen);
@@ -644,6 +646,12 @@ public:
    float m_spawnTime {}; // time this bot spawned
    float m_timeTeamOrder {}; // time of last radio command
    float m_slowFrameTimestamp {}; // time to per-second think
+   float m_zpToolTime {}; // zombie plague tool phase deadline
+   float m_zpToolCooldown {}; // next zombie plague tool use
+   float m_zpToolHold {}; // how long to hold attack for the current tool
+   int m_zpToolPhase {}; // zombie plague tool state: 0 idle, 1 draw, 2 hold, 3 release
+   const char *m_zpToolWeapon {}; // weapon classname being used
+   Vector m_zpToolTarget {}; // where the tool is aimed
    float m_nextBuyTime {}; // next buy time
    float m_checkDarkTime {}; // check for darkness time
    float m_preventFlashing {}; // bot turned away from flashbang

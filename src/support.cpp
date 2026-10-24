@@ -272,6 +272,12 @@ void BotSupport::updateClients () {
             client.team2 = Team::Unassigned;
          }
 
+         // zombie plague never sends TeamInfo either; the "team" userinfo is the role, and it
+         // changes on infection, so refresh it every frame for all friend/enemy checks
+         if (game.is (GameFlags::HalfLife) && game.is (GameFlags::ZombieMod)) {
+            client.team = client.team2 = game.getZombiePlagueTeam (player);
+         }
+
          if (game.isAliveEntity (player)) {
             client.flags |= ClientFlags::Alive;
          }

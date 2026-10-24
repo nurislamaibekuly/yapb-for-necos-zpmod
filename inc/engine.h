@@ -405,6 +405,10 @@ public:
       if (isNullEntity (ent)) {
          return Team::Unassigned;
       }
+      // zombie plague publishes the role in the "team" userinfo key
+      if (is (GameFlags::HalfLife) && is (GameFlags::ZombieMod)) {
+         return getZombiePlagueTeam (ent);
+      }
       // true (non-teamplay) half-life deathmatch never sends a TeamInfo message
       // for a normal spawn, so client.team stays 0 for every player forever.
       // give each player a unique "team" here so bots treat one another (and
@@ -420,7 +424,20 @@ public:
       if (isNullEntity (ent)) {
          return Team::Unassigned;
       }
+      if (is (GameFlags::HalfLife) && is (GameFlags::ZombieMod)) {
+         return getZombiePlagueTeam (ent);
+      }
       return util.getClient (indexOfPlayer (ent)).team2;
+   }
+
+   // maps the mod's "team" userinfo (zombie/human/spectator) to bot teams
+   int getZombiePlagueTeam (edict_t *ent) const {
+      const char *teamKey = engfuncs.pfnInfoKeyValue (engfuncs.pfnGetInfoKeyBuffer (ent), "team");
+
+      if (teamKey != nullptr && strcmp (teamKey, "zombie") == 0) {
+         return Team::Terrorist;
+      }
+      return Team::CT;
    }
 
    // get real gamedll team (matches gamedll indices)

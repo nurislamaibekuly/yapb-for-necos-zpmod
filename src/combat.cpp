@@ -425,10 +425,19 @@ bool Bot::lookupEnemies () {
       // ignore shielded enemies, while we have real one
       edict_t *shieldEnemy = nullptr;
 
-      if (cv_attack_monsters) {
+      if (cv_attack_monsters || (game.is (GameFlags::ZombieMod) && m_isCreature)) {
          // search the world for monsters...
          for (const auto &interesting : gameState.getInterestingEntities ()) {
             if (!game.isMonsterEntity (interesting)) {
+               continue;
+            }
+            const bool isTurret = interesting->v.classname.str () == "zp_turret";
+
+            // only zombies go for turrets, and only the ones that are built and alive
+            if (isTurret && (!m_isCreature || interesting->v.health <= 0.0f || interesting->v.solid == SOLID_NOT)) {
+               continue;
+            }
+            else if (!isTurret && !cv_attack_monsters) {
                continue;
             }
 
@@ -498,7 +507,7 @@ bool Bot::lookupEnemies () {
       }
    }
 
-   if (newEnemy != nullptr && (game.isPlayerEntity (newEnemy) || (cv_attack_monsters && game.isMonsterEntity (newEnemy)))) {
+   if (newEnemy != nullptr && (game.isPlayerEntity (newEnemy) || ((cv_attack_monsters || m_isCreature) && game.isMonsterEntity (newEnemy)))) {
       bots.setCanPause (true);
 
       m_aimFlags |= AimFlags::Enemy;
@@ -1528,6 +1537,10 @@ void Bot::doFireWeapons () {
 }
 
 void Bot::fireWeapons () {
+   // a zombie plague tool (grenade, turret kit) owns the weapon slot right now
+   if (m_zpToolPhase != 0) {
+      return;
+   }
    // this function will return true if weapon was fired, false otherwise
 
    // do not handle this if with grenade, as it's done it throw grenade task
@@ -3114,6 +3127,144 @@ void Bot::selectWeaponByIndex (int index) {
 void Bot::selectWeaponById (int id) {
    const auto &prop = conf.getWeaponProp (id);
    issueCommand (prop.classname.chars ());
+}
+
+bool Bot::zpUseTool (const char *weapon, const Vector &target, float holdTime) {
+   // drives the mod's custom weapons: select, aim, hold attack (pin pull), release (throw/place)
+   const float now = game.time ();
+
+   auto aimAt = [&] () {
+      Vector angles = (target - getEyesPos ()).angles ();
+      angles.x = -angles.x;
+      angles.clampAngles ();
+
+      pev->v_angle = angles;
+      m_moveAngles = angles;
+      m_idealAngles = angles;
+      m_moveSpeed = m_strafeSpeed = 0.0f;
+   };
+
+   switch (m_zpToolPhase) {
+   case 0:
+      issueCommand (weapon);
+      m_zpToolPhase = 1;
+      m_zpToolTime = now + 0.9f; // draw animation
+      return true;
+
+   case 1:
+      aimAt ();
+
+      if (now >= m_zpToolTime) {
+         m_zpToolPhase = 2;
+         m_zpToolTime = now + holdTime;
+      }
+      return true;
+
+   case 2:
+      aimAt ();
+      pev->button |= IN_ATTACK;
+
+      if (now >= m_zpToolTime) {
+         m_zpToolPhase = 3;
+         m_zpToolTime = now + 0.7f; // release, let the throw animation play out
+      }
+      return true;
+
+   default:
+      aimAt ();
+      pev->button &= ~IN_ATTACK;
+
+      if (now >= m_zpToolTime) {
+         m_zpToolPhase = 0;
+         m_zpToolCooldown = now + 5.0f;
+         m_zpToolWeapon = nullptr;
+         selectWeaponById (selectHLCombatWeapon (512.0f)); // back to the gun
+      }
+      return true;
+   }
+}
+
+void Bot::zpTactics () {
+   // zombie plague roles: zombies throw infection bombs, humans build turrets and throw
+   // molotovs / freeze bombs; the rest (chase, flee, shoot, claw) is the regular bot logic
+   if (!m_isAlive || !game.is (GameFlags::HalfLife) || !game.is (GameFlags::ZombieMod)) {
+      m_zpToolPhase = 0;
+      return;
+   }
+   const float now = game.time ();
+   const auto weapons = pev->weapons;
+
+   // finish whatever we've started
+   if (m_zpToolPhase != 0 && m_zpToolWeapon) {
+      zpUseTool (m_zpToolWeapon, m_zpToolTarget, m_zpToolHold);
+      return;
+   }
+   m_zpToolPhase = 0;
+
+   if (m_zpToolCooldown > now || m_blindTime > now) {
+      return;
+   }
+   const bool hasEnemy = !game.isNullEntity (m_enemy) && game.isAliveEntity (m_enemy) && game.isPlayerEntity (m_enemy)
+      && (m_states & Sense::SeeingEnemy);
+
+   const float distance = hasEnemy ? m_enemy->v.origin.distance (pev->origin) : 0.0f;
+
+   auto begin = [&] (const char *weapon, const Vector &target, float hold) {
+      m_zpToolWeapon = weapon;
+      m_zpToolTarget = target;
+      m_zpToolHold = hold;
+      zpUseTool (weapon, target, hold);
+   };
+
+   if (m_isCreature) {
+      // infection bomb: from a distance, the blast is wider than the claws reach
+      if (hasEnemy && (weapons & cr::bit (18)) && distance > 260.0f && distance < 700.0f && rg.chance (60)) {
+         begin ("weapon_infectionbomb", m_enemy->v.origin + Vector (0.0f, 0.0f, 24.0f), 0.5f);
+      }
+      return;
+   }
+
+   if (hasEnemy && distance > 250.0f && distance < 800.0f) {
+      // freeze the ones about to catch us, burn the ones still far away
+      if ((weapons & cr::bit (17)) && distance < 500.0f) {
+         begin ("weapon_freezebomb", m_enemy->v.origin + Vector (0.0f, 0.0f, 16.0f), 0.5f);
+      }
+      else if (weapons & cr::bit (16)) {
+         begin ("weapon_molotov", m_enemy->v.origin + Vector (0.0f, 0.0f, 16.0f), 0.5f);
+      }
+      return;
+   }
+
+   // quiet moment, build the turret on the floor right in front of us
+   if (!hasEnemy && (weapons & cr::bit (19)) && m_seeEnemyTime + 3.0f < now) {
+      // don't pile turrets on top of each other, a spot is covered once one stands nearby
+      bool covered = false;
+
+      game.searchEntities (pev->origin, 700.0f, [&] (edict_t *e) {
+         if (e->v.classname.str () == "zp_turret") {
+            covered = true;
+            return EntitySearchResult::Break;
+         }
+         return EntitySearchResult::Continue;
+      });
+
+      if (covered) {
+         m_zpToolCooldown = now + 3.0f;
+         return;
+      }
+
+      // build facing where the zombies came from, so the turret covers the approach
+      Vector facing = pev->v_angle;
+
+      if (!m_lastEnemyOrigin.empty ()) {
+         facing = (m_lastEnemyOrigin - pev->origin).angles ();
+         facing.x = 0.0f;
+      }
+      const Vector forward = Vector (0.0f, facing.y, 0.0f).forward ();
+      const Vector floor = pev->origin + forward * 80.0f - Vector (0.0f, 0.0f, 30.0f);
+
+      begin ("weapon_turret", floor, 0.1f);
+   }
 }
 
 void Bot::checkBurstMode (float distance) {

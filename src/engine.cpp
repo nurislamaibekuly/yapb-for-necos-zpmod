@@ -929,7 +929,8 @@ void Game::constructHLBinaryName (StringArray &libs) {
       libs.push ("libhl" + suffix);
    }
    else {
-      // Standard: "mp" and "cs" with suffix
+      // the zombie plague mod is installed next to the engine stock hl library
+      libs.push ("zpserver" + suffix);
       libs.push ("hl" + suffix);
    }
 }
@@ -1206,6 +1207,17 @@ bool Game::postload () {
 void Game::applyGameModes () {
    // half-life deathmatch / teamplay
    if (is (GameFlags::HalfLife)) {
+      // this mod ships its own zombie plague implementation, and the "team"
+      // userinfo is the authoritative human/zombie role
+      static ConVarRef zp_active ("zp_turret_damage");
+
+      if (zp_active.exists ()) {
+         m_gameFlags |= GameFlags::ZombieMod;
+         m_gameFlags &= ~GameFlags::FreeForAll;
+         return;
+      }
+      m_gameFlags &= ~GameFlags::ZombieMod;
+
       static ConVarRef mp_teamplay ("mp_teamplay");
 
       if (!mp_teamplay.exists () || mp_teamplay.value () <= 0.0f) {
@@ -2119,7 +2131,11 @@ void GameState::updateInterestingEntities () {
          m_interestingEntities.push (e);
       }
 
-      if (cv_attack_monsters && game.isMonsterEntity (e)) {
+      // zombies break the turrets humans build
+      if (game.is (GameFlags::ZombieMod) && classname == "zp_turret") {
+         m_interestingEntities.push (e);
+      }
+      else if (cv_attack_monsters && game.isMonsterEntity (e)) {
          m_interestingEntities.push (e);
       }
 
