@@ -1894,6 +1894,18 @@ void Bot::attackMovement () {
       }
    }
 
+   if (game.is (GameFlags::ZombieMod)) {
+      m_fightStyle = Fight::None;
+      m_strafeSpeed = 0.0f;
+
+      if (m_isCreature) {
+         m_moveSpeed = pev->maxspeed;
+      }
+      else if (distanceSq > cr::sqrf (128.0f) && approach >= 50) {
+         m_moveSpeed = pev->maxspeed * 0.4f;
+      }
+   }
+
    if (m_fightStyle == Fight::Strafe) {
       auto swapDodgeDirection = [&] () {
          m_dodgeStrafeDir = (m_dodgeStrafeDir == Dodge::Left ? Dodge::Right : Dodge::Left);
