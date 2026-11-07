@@ -401,15 +401,11 @@ void BotManager::maintainQuota () {
       return;
    }
 
-   if (m_quotaMaintainTime > game.time ()) {
-      return;
-   }
-
    if (graph.length () < 1 || graph.hasChanged ()) {
       if (cv_quota.as <int> () > 0) {
-         ctrl.msg ("Graph is unavailable or has changed. Cannot create bot.");
+         ctrl.msg ("There is no graph found. Cannot create bot.");
       }
-      m_quotaMaintainTime = game.time () + 0.4f;
+      cv_quota.set (0);
       return;
    }
 
@@ -425,22 +421,26 @@ void BotManager::maintainQuota () {
       const auto &request = m_addRequests.popFront ();
       const auto createResult = create (request.name, request.difficulty, request.personality, request.team, request.skin);
 
+      if (request.manual) {
+         cv_quota.set (cr::min (cv_quota.as <int> () + 1, maxClients));
+      }
+
       // check the result of creation
       if (createResult == BotCreateResult::GraphError) {
          m_addRequests.clear (); // something wrong with graph, reset tab of creation
+         cv_quota.set (0); // reset quota
       }
       else if (createResult == BotCreateResult::MaxPlayersReached) {
          ctrl.msg ("Maximum players reached (%d/%d). Unable to create Bot.", maxClients, maxClients);
 
          m_addRequests.clear (); // maximum players reached, so set quota to maximum players
+         cv_quota.set (botsInGame);
       }
       else if (createResult == BotCreateResult::TeamStacked) {
          ctrl.msg ("Could not add bot to the game: Team is stacked (to disable this check, set mp_limitteams and mp_autoteambalance to zero and restart the round)");
 
          m_addRequests.clear ();
-      }
-      else if (request.manual) {
-         cv_quota.set (cr::min (cv_quota.as <int> () + 1, maxClients));
+         cv_quota.set (botsInGame);
       }
       m_maintainTime = game.time () + 0.1f;
 
@@ -451,6 +451,9 @@ void BotManager::maintainQuota () {
    }
 
    // now keep bot number up to date
+   if (m_quotaMaintainTime > game.time ()) {
+      return;
+   }
    int desiredBotCount = cv_quota.as <int> ();
 
    // only assign if out of range
