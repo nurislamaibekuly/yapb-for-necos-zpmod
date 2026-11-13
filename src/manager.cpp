@@ -402,10 +402,14 @@ void BotManager::maintainQuota () {
    }
 
    if (graph.length () < 1 || graph.hasChanged ()) {
-      if (cv_quota.as <int> () > 0) {
-         ctrl.msg ("There is no graph found. Cannot create bot.");
+      m_addRequests.clear ();
+
+      if (m_quotaMaintainTime <= game.time ()) {
+         if (cv_quota.as <int> () > 0) {
+            ctrl.msg ("There is no graph found. Cannot create bot.");
+         }
+         m_quotaMaintainTime = game.time () + 5.0f;
       }
-      cv_quota.set (0);
       return;
    }
 
@@ -421,26 +425,24 @@ void BotManager::maintainQuota () {
       const auto &request = m_addRequests.popFront ();
       const auto createResult = create (request.name, request.difficulty, request.personality, request.team, request.skin);
 
-      if (request.manual) {
-         cv_quota.set (cr::min (cv_quota.as <int> () + 1, maxClients));
-      }
-
       // check the result of creation
       if (createResult == BotCreateResult::GraphError) {
          m_addRequests.clear (); // something wrong with graph, reset tab of creation
-         cv_quota.set (0); // reset quota
       }
       else if (createResult == BotCreateResult::MaxPlayersReached) {
          ctrl.msg ("Maximum players reached (%d/%d). Unable to create Bot.", maxClients, maxClients);
 
-         m_addRequests.clear (); // maximum players reached, so set quota to maximum players
-         cv_quota.set (botsInGame);
+         m_addRequests.clear ();
+         m_quotaMaintainTime = game.time () + 2.0f;
       }
       else if (createResult == BotCreateResult::TeamStacked) {
          ctrl.msg ("Could not add bot to the game: Team is stacked (to disable this check, set mp_limitteams and mp_autoteambalance to zero and restart the round)");
 
          m_addRequests.clear ();
-         cv_quota.set (botsInGame);
+         m_quotaMaintainTime = game.time () + 2.0f;
+      }
+      else if (request.manual) {
+         cv_quota.set (cr::min (cv_quota.as <int> () + 1, maxClients));
       }
       m_maintainTime = game.time () + 0.1f;
 
@@ -506,11 +508,13 @@ void BotManager::maintainQuota () {
    // sent message only to console from here
    ctrl.setFromConsole (true);
 
+   const int currentBots = getBotCount ();
+
    // add bots if necessary
-   if (desiredBotCount > botsInGame && botsInGame < maxSpawnCount) {
+   if (desiredBotCount > currentBots && currentBots < maxSpawnCount && m_addRequests.empty ()) {
       createRandom ();
    }
-   else if (desiredBotCount < botsInGame) {
+   else if (desiredBotCount < currentBots) {
       balancedKickRandom (false);
    }
    else {
