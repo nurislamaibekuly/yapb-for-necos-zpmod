@@ -119,7 +119,8 @@ void Bot::normal_ () {
 
       // reached node is a camp node
       if ((m_pathFlags & NodeFlag::Camp) && canCamp () && !isKnifeMode ()) {
-         const bool allowedCampWeapon = hasPrimaryWeapon ()
+         const bool allowedCampWeapon = (game.is (GameFlags::ZombieMod) && !m_isCreature)
+            || hasPrimaryWeapon ()
             || hasShield ()
             || (hasSecondaryWeapon () && !hasPrimaryWeapon () && m_numFriendsLeft > game.maxClients () / 6);
 
@@ -149,8 +150,8 @@ void Bot::normal_ () {
                campingAllowed = false;
             }
 
-            // skip sniper node if we don't have sniper weapon
-            if (!usesSniper () && (m_pathFlags & NodeFlag::Sniper)) {
+            // skip sniper node if we don't have sniper weapon (in ZP, humans use any high/cover spot)
+            if (!game.is (GameFlags::ZombieMod) && !usesSniper () && (m_pathFlags & NodeFlag::Sniper)) {
                campingAllowed = false;
             }
 

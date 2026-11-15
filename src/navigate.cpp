@@ -11,14 +11,30 @@ ConVar cv_has_team_semiclip ("has_team_semiclip", "0", "When enabled, bots will 
 ConVar cv_graph_slope_height ("graph_slope_height", "24.0", "Determines the maximum slope height change between the current and next node to consider the current link as a jump link. Only for generated graphs.", true, 12.0f, 48.0f);
 
 int Bot::findBestGoal () {
-   if (game.is (GameFlags::ZombieMod) && m_isCreature) {
-      const auto &players = bots.countTeamPlayers ();
+   if (game.is (GameFlags::ZombieMod)) {
+      if (m_isCreature) {
+         const auto &players = bots.countTeamPlayers ();
 
-      if (players.first < graph.m_terrorPoints.length <int> ()) {
-         return graph.m_terrorPoints.random ();
+         if (players.first < graph.m_terrorPoints.length <int> ()) {
+            return graph.m_terrorPoints.random ();
+         }
+         else if (players.first < graph.m_goalPoints.length <int> ()) {
+            return graph.m_goalPoints.random ();
+         }
+         return graph.random ();
       }
-      else if (players.first < graph.m_goalPoints.length <int> ()) {
-         return graph.m_goalPoints.random ();
+
+      // Human bots in Zombie Mod: seek camp/hiding spots when the round starts
+      if (!graph.m_campPoints.empty ()) {
+         const int campGoal = findGoalPost (GoalTactic::Camp, &graph.m_campPoints, &graph.m_campPoints);
+         if (graph.exists (campGoal)) {
+            return campGoal;
+         }
+         return graph.m_campPoints.random ();
+      }
+
+      if (!graph.m_ctPoints.empty ()) {
+         return graph.m_ctPoints.random ();
       }
       return graph.random ();
    }
